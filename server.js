@@ -2,29 +2,22 @@
 const path = require('path');
 const crypto = require('crypto');
 const { Pool } = require('pg');
-const mysql = require('mysql2/promise');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
-const pgPool = new Pool({
-  host: '127.0.0.1',
-  port: 5432,
-  database: 'step03_app',
-  user: 'postgres',
-  password: 'minhashamaz',
-});
+const pgHost = process.env.PGHOST || '127.0.0.1';
+const isLocalPg = pgHost === '127.0.0.1' || pgHost === 'localhost';
 
-const mysqlPool = mysql.createPool({
-  host: '127.0.0.1',
-  port: 3307,
-  database: 'step03_mysql',
-  user: 'root',
-  password: 'Minhashamaz123',
-  waitForConnections: true,
-  connectionLimit: 5,
+const pgPool = new Pool({
+  host: pgHost,
+  port: Number(process.env.PGPORT || 5432),
+  database: process.env.PGDATABASE || 'postgres',
+  user: process.env.PGUSER || 'postgres',
+  password: process.env.PGPASSWORD,
+  ssl: isLocalPg ? false : { rejectUnauthorized: false },
 });
 
 app.get('/', (req, res) => {
@@ -38,17 +31,6 @@ app.get('/api/test-pg', async (req, res) => {
       ['public']
     );
     res.json({ ok: true, data: result.rows[0] });
-  } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
-  }
-});
-
-app.get('/api/test-mysql', async (req, res) => {
-  try {
-    const [rows] = await mysqlPool.query(
-      'SELECT DATABASE() AS db, COUNT(*) AS table_count FROM information_schema.tables WHERE table_schema = DATABASE()'
-    );
-    res.json({ ok: true, data: rows[0] });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
@@ -228,6 +210,5 @@ app.delete('/api/tasks/:id', async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Test server running at http://127.0.0.1:${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
-
