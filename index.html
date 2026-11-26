@@ -1,0 +1,259 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Step 03 App</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; }
+    button { padding: 8px 14px; margin-right: 8px; margin-top: 6px; cursor: pointer; }
+    input, select { display: block; width: 100%; max-width: 360px; padding: 8px; margin: 6px 0 12px; }
+    pre { background: #f4f4f4; padding: 14px; border-radius: 6px; overflow-x: auto; }
+    hr { margin: 24px 0; }
+    .item-card { border: 1px solid #ddd; padding: 10px 12px; border-radius: 6px; margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+  <h1>Step 03 Database, Login &amp; CRUD</h1>
+  <button id="btn-pg">Test PostgreSQL</button>
+  <button id="btn-mysql">Test MySQL</button>
+
+  <hr />
+
+  <h2>Login</h2>
+  <form id="login-form">
+    <label for="email">Email</label>
+    <input id="email" type="email" required value="minharafeek96@gmail.com" />
+
+    <label for="password">Password</label>
+    <input id="password" type="password" required placeholder="Enter password" />
+
+    <button type="submit">Log In</button>
+  </form>
+
+  <hr />
+
+  <h2>Projects (CRUD)</h2>
+  <form id="project-form">
+    <label for="project-title">New Project Title</label>
+    <input id="project-title" type="text" required placeholder="e.g. Full-Stack Capstone" />
+
+    <button type="submit">Add Project</button>
+    <button type="button" id="btn-load-projects">Refresh Projects</button>
+  </form>
+
+  <div id="projects-list"></div>
+
+  <hr />
+
+  <h2>Tasks (CRUD)</h2>
+  <form id="task-form">
+    <label for="task-project-id">Project</label>
+    <select id="task-project-id" required></select>
+
+    <label for="task-title">New Task Title</label>
+    <input id="task-title" type="text" required placeholder="e.g. Build login endpoint" />
+
+    <label for="task-status">Status</label>
+    <select id="task-status">
+      <option value="todo">todo</option>
+      <option value="in_progress">in_progress</option>
+      <option value="done">done</option>
+    </select>
+
+    <button type="submit">Add Task</button>
+    <button type="button" id="btn-load-tasks">Refresh Tasks</button>
+  </form>
+
+  <div id="tasks-list"></div>
+
+  <pre id="output">Ready...</pre>
+
+  <script>
+    const output = document.getElementById('output');
+    const projectsList = document.getElementById('projects-list');
+    const tasksList = document.getElementById('tasks-list');
+    const taskProjectSelect = document.getElementById('task-project-id');
+    let currentUserId = 1;
+
+    function showJson(data) {
+      output.textContent = JSON.stringify(data, null, 2);
+    }
+
+    async function runCheck(url, label) {
+      output.textContent = `Testing ${label}...`;
+      try {
+        const res = await fetch(url);
+        showJson(await res.json());
+      } catch (err) {
+        showJson({ ok: false, error: err.message });
+      }
+    }
+
+    async function loadProjects() {
+      try {
+        const res = await fetch(`/api/projects?userId=${currentUserId}`);
+        const data = await res.json();
+        showJson(data);
+
+        if (!data.ok) return;
+
+        if (data.projects.length === 0) {
+          projectsList.innerHTML = '<p>No projects yet. Add one above.</p>';
+          taskProjectSelect.innerHTML = '<option value="">Create a project first</option>';
+          return;
+        }
+
+        taskProjectSelect.innerHTML = data.projects
+          .map((p) => `<option value="${p.id}">#${p.id} — ${escapeHtml(p.title)}</option>`)
+          .join('');
+
+        projectsList.innerHTML = data.projects.map((p) => `
+          <div class="item-card">
+            <strong>#${p.id} — ${escapeHtml(p.title)}</strong>
+            <div>
+              <button type="button" onclick="renameProject(${p.id}, '${escapeJs(p.title)}')">Rename</button>
+              <button type="button" onclick="deleteProject(${p.id})">Delete</button>
+            </div>
+          </div>
+        `).join('');
+      } catch (err) {
+        showJson({ ok: false, error: err.message });
+      }
+    }
+
+    async function loadTasks() {
+      try {
+        const res = await fetch('/api/tasks');
+        const data = await res.json();
+        showJson(data);
+
+        if (!data.ok) return;
+        if (data.tasks.length === 0) {
+          tasksList.innerHTML = '<p>No tasks yet. Add one above.</p>';
+          return;
+        }
+
+        tasksList.innerHTML = data.tasks.map((t) => `
+          <div class="item-card">
+            <strong>#${t.id} — ${escapeHtml(t.title)}</strong>
+            <div>Project ID: ${t.project_id} | Status: ${escapeHtml(t.status || 'todo')}</div>
+            <div>
+              <button type="button" onclick="toggleTaskStatus(${t.id}, '${escapeJs(t.status || 'todo')}')">Cycle Status</button>
+              <button type="button" onclick="deleteTask(${t.id})">Delete</button>
+            </div>
+          </div>
+        `).join('');
+      } catch (err) {
+        showJson({ ok: false, error: err.message });
+      }
+    }
+
+    window.renameProject = async (id, oldTitle) => {
+      const nextTitle = prompt('New project title:', oldTitle);
+      if (!nextTitle || !nextTitle.trim()) return;
+      const res = await fetch(`/api/projects/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: nextTitle.trim() }),
+      });
+      showJson(await res.json());
+      loadProjects();
+    };
+
+    window.deleteProject = async (id) => {
+      const res = await fetch(`/api/projects/${id}`, { method: 'DELETE' });
+      showJson(await res.json());
+      loadProjects();
+      loadTasks();
+    };
+
+    window.toggleTaskStatus = async (id, currentStatus) => {
+      const order = ['todo', 'in_progress', 'done'];
+      const nextStatus = order[(order.indexOf(currentStatus) + 1) % order.length];
+      const res = await fetch(`/api/tasks/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      showJson(await res.json());
+      loadTasks();
+    };
+
+    window.deleteTask = async (id) => {
+      const res = await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+      showJson(await res.json());
+      loadTasks();
+    };
+
+    function escapeHtml(str) {
+      return String(str).replace(/[&<>"']/g, (m) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[m]));
+    }
+
+    function escapeJs(str) {
+      return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    }
+
+    document.getElementById('btn-pg').addEventListener('click', () => runCheck('/api/test-pg', 'PostgreSQL'));
+    document.getElementById('btn-mysql').addEventListener('click', () => runCheck('/api/test-mysql', 'MySQL'));
+    document.getElementById('btn-load-projects').addEventListener('click', loadProjects);
+    document.getElementById('btn-load-tasks').addEventListener('click', loadTasks);
+
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (data.ok && data.user && data.user.id) {
+        currentUserId = data.user.id;
+      }
+      showJson(data);
+      loadProjects();
+    });
+
+    document.getElementById('project-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const title = document.getElementById('project-title').value;
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUserId, title }),
+      });
+      const data = await res.json();
+      showJson(data);
+      if (data.ok) {
+        document.getElementById('project-title').value = '';
+        loadProjects();
+      }
+    });
+
+    document.getElementById('task-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const projectId = taskProjectSelect.value;
+      const title = document.getElementById('task-title').value;
+      const status = document.getElementById('task-status').value;
+      const res = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId, title, status }),
+      });
+      const data = await res.json();
+      showJson(data);
+      if (data.ok) {
+        document.getElementById('task-title').value = '';
+        loadTasks();
+      }
+    });
+
+    loadProjects();
+    loadTasks();
+  </script>
+</body>
+</html>
